@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	pb "max-api/example/pb"
-	hello "max-api/example/pkg"
-	"max-api/lib/middleware"
+	"grpc-zipkin-with-grpc-gateway/middleware"
+	pb "grpc-zipkin-with-grpc-gateway/pb"
+	hello "grpc-zipkin-with-grpc-gateway/pkg"
 	"net"
 	"net/http"
 	"os"
@@ -71,7 +71,6 @@ func main() {
 	var opts []grpc.DialOption
 	server = grpc.NewServer(grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
 		grpc_opentracing.UnaryServerInterceptor(grpc_opentracing.WithTracer(tracer)),
-		middleware.SystemPanicInterceptor(logger),
 		middleware.LoggingInterceptor(logger))), grpc.MaxSendMsgSize(50000000))
 	opts = append(opts, grpc.WithInsecure())
 

@@ -2,7 +2,7 @@ package hello
 
 import (
 	"context"
-	pb "max-api/example/pb"
+	pb "grpc-zipkin-with-grpc-gateway/pb"
 
 	"github.com/sirupsen/logrus"
 )
