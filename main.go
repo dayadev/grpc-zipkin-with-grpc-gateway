@@ -43,7 +43,7 @@ func main() {
 		}).Error("Unable to start grpc Listener")
 	}
 
-	reporter := zipkinhttp.NewReporter("http://srvgdycedmapid1.nov.com:9411/api/v1/spans")
+	reporter := zipkinhttp.NewReporter("http://localhost:9411/api/v2/spans")
 	defer reporter.Close()
 
 	// create our local service endpoint
