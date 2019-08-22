@@ -1,18 +1,11 @@
 package main
 
 import (
-	"context"
-	"grpc-zipkin-with-grpc-gateway/middleware"
-	pb "grpc-zipkin-with-grpc-gateway/pb"
-	hello "grpc-zipkin-with-grpc-gateway/pkg"
 	"net"
-	"net/http"
 	"os"
-	"runtime"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_opentracing "github.com/grpc-ecosystem/go-grpc-middleware/tracing/opentracing"
-	gruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	opentracing "github.com/opentracing/opentracing-go"
 	zipkinot "github.com/openzipkin-contrib/zipkin-go-opentracing"
 	zipkin "github.com/openzipkin/zipkin-go"
@@ -21,6 +14,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+
+	middleware "grpc-zipkin-with-grpc-gateway/middleware"
+	pb "grpc-zipkin-with-grpc-gateway/pb"
+	service "grpc-zipkin-with-grpc-gateway/pkg"
 )
 
 func main() {
@@ -32,13 +29,13 @@ func main() {
 		},
 		TimestampFormat: "2006-01-02T15:04:05.000Z",
 	}
-	logger := log.WithFields(logrus.Fields{"service": "hello"})
+	logger := log.WithFields(logrus.Fields{"service": "helloservice"})
 
-	lis, err := net.Listen("tcp", ":8080")
+	grpcListener, err := net.Listen("tcp", ":9090")
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"transport": "gRPC",
-			"during":    "Listen",
+			"during":    "serve",
 			"error":     err,
 		}).Error("Unable to start grpc Listener")
 	}
@@ -47,7 +44,7 @@ func main() {
 	defer reporter.Close()
 
 	// create our local service endpoint
-	endpoint, err := zipkin.NewEndpoint("hello", "127.0.0.1:8080")
+	endpoint, err := zipkin.NewEndpoint("hello", "hello:9090")
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"error": err,
@@ -66,51 +63,27 @@ func main() {
 	tracer := zipkinot.Wrap(nativeTracer)
 
 	opentracing.SetGlobalTracer(tracer)
-	var server *grpc.Server
-	// grpc dial options to be used by REST proxy server
-	var opts []grpc.DialOption
-	server = grpc.NewServer(grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
+	srv := service.NewHelloService(logger)
+
+	var s *grpc.Server
+
+	s = grpc.NewServer(grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
 		grpc_opentracing.UnaryServerInterceptor(grpc_opentracing.WithTracer(tracer)),
 		middleware.LoggingInterceptor(logger))), grpc.MaxSendMsgSize(50000000))
-	opts = append(opts, grpc.WithInsecure())
 
-	srv := hello.NewHelloService(logger)
-	pb.RegisterHelloServer(server, srv)
+	pb.RegisterHelloServer(s, srv)
 	healthServer := health.NewServer()
-	grpc_health_v1.RegisterHealthServer(server, healthServer)
-	go func() {
-		if err := server.Serve(lis); err != nil {
-			logger.WithFields(logrus.Fields{
-				"transport": "gRPC",
-				"during":    "serve",
-				"error":     err,
-			}).Error("Unable to start hello gRPC service")
-		}
-	}()
-
-	go func() {
-		ctx := context.Background()
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		mux := gruntime.NewServeMux()
-		pb.RegisterHelloHandlerFromEndpoint(ctx, mux, ":8080", opts)
-		if err = http.ListenAndServe(":8081", mux); err != nil {
-			logger.WithFields(logrus.Fields{
-				"transport": "REST",
-				"during":    "Listen",
-				"error":     err,
-			}).Error("Unable to start hello REST server")
-		}
-	}()
+	grpc_health_v1.RegisterHealthServer(s, healthServer)
 	logger.WithFields(logrus.Fields{
 		"transport":                 "gRPC",
-		"service listening on port": ":8080",
-	}).Info("hello gRPC service started")
+		"service listening on port": ":9090",
+	}).Info("hello service started")
 
-	logger.WithFields(logrus.Fields{
-		"transport":                      "REST",
-		"REST gateway listening on port": ":8081",
-	}).Info("hello REST service started")
-
-	runtime.Goexit()
+	if err := s.Serve(grpcListener); err != nil {
+		logger.WithFields(logrus.Fields{
+			"transport": "gRPC",
+			"during":    "serve",
+			"error":     err,
+		}).Error("Unable to start hello service")
+	}
 }
